@@ -100,7 +100,7 @@ from io import BytesIO
 lock = Lock()
 
 class Downloader():
-    def __init__(self, url, nums, file,size):
+    def __init__(self, url, nums, file,size=None):
         self.url = url
         self.num = nums
         self.name = file
@@ -110,7 +110,7 @@ class Downloader():
             self.url = r.headers['Location']
             print("该url已重定向至{}".format(self.url))
             r = head(self.url)
-        self.size = size
+        self.size = size if size else r.headers['Content-Length']
         print('该文件大小为：{} bytes'.format(self.size))
         self.length=0
         self.start=time.perf_counter()
@@ -205,6 +205,9 @@ if __name__=="__main__":
     parser.add_argument("--stop",help="结束的分P",type=int)
     parser.add_argument("--only",help="只下载某个分P",type=int)
     parser.add_argument("-t","--threads",help="多线程，最大1024线程",type=int)
+    parser.add_argument("-m","--mode",help="模式:1.flv模式，存在限速，部分视频有分段 2.mp4模式，限速65k，只支持360/240p，无视频分段 3.dash模式，无限速，无视频分段，音视频分离。",type=int)
+    parser.add_argument("-v","--videoOnly",action="store_true")
+    parser.add_argument("-a","--audioOnly",action="store_true")
     args=parser.parse_args()
     avid=checkIsVaildId(args.avid)
     if not avid:
@@ -239,25 +242,63 @@ if __name__=="__main__":
         parts=status["data"]["pages"][partid]
         if parts.get("aid"):
             avid=parts["aid"]
-        stream=requests.get(stream_URL%(avid,parts["cid"])+"&qn=%s&fourk=%s"%(resolution,fourk),cookies=cookies,)
+        stream=requests.get(stream_URL%(avid,parts["cid"])+"&qn=%s&fourk=%s&fnval=%s"%(resolution,fourk,16 if args.mode==3 else 1 if args.mode==2 else 0),cookies=cookies,)
         if stream.json()["code"]!=0: exit(stream.json()["code"],stream.json()["message"])
-        j=0
-        for part in stream.json()["data"]["durl"]:
-            j+=1
-            filename="%s%s(%s).%s"%(status["data"]["title"],partid+1,j,part['url'].split('/')[-1].split("?")[0].split('.')[-1])
-            print("\n开始下载"+filename)
-            print(part['url'])
-            headers={}
-            headers["Referer"]='https://www.bilibili.com/video/av%s'%(avid,)
-            headers["Origin"]="https://www.bilibili.com"
-            headers["User-Agent"]="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.116 Safari/537.36"
-            #threading.Thread(target=download,args=(f,part['url'],stream.cookies,headers),daemon=True).start()
-            if not args.threads:
-                f=open(filename,'wb')
-                threads=0
-                download(f,part['url'],stream.cookies,headers)
-                f.close()
-            else:
-                threads=args.threads
-                Downloader(part['url'],threads,filename,part["size"]).run()
+        if args.mode!=3:
+            j=0
+            for part in stream.json()["data"]["durl"]:
+                j+=1
+                filename="%s%s(%s).%s"%(status["data"]["title"],partid+1,j,part['url'].split('/')[-1].split("?")[0].split('.')[-1])
+                print("\n开始下载"+filename)
+                print(part['url'])
+                headers={}
+                headers["Referer"]='https://www.bilibili.com/video/av%s'%(avid,)
+                headers["Origin"]="https://www.bilibili.com"
+                headers["User-Agent"]="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.116 Safari/537.36"
+                #threading.Thread(target=download,args=(f,part['url'],stream.cookies,headers),daemon=True).start()
+                if not args.threads:
+                    f=open(filename,'wb')
+                    threads=0
+                    download(f,part['url'],stream.cookies,headers)
+                    f.close()
+                else:
+                    threads=args.threads
+                    Downloader(part['url'],threads,filename,part["size"]).run()
+        if args.mode==3:
+            if not args.audioOnly:
+                url=stream.json()['data']['dash']['video'][0]['baseUrl']
+                filename="%s%s(%s).%s"%(status["data"]["title"],partid+1,0,'mp4')
+                print("\n开始下载"+filename)
+                print(url)
+                headers={}
+                headers["Referer"]='https://www.bilibili.com/video/av%s'%(avid,)
+                headers["Origin"]="https://www.bilibili.com"
+                headers["User-Agent"]="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.116 Safari/537.36"
+                #threading.Thread(target=download,args=(f,part['url'],stream.cookies,headers),daemon=True).start()
+                if not args.threads:
+                    f=open(filename,'wb')
+                    threads=0
+                    download(f,url,stream.cookies,headers)
+                    f.close()
+                else:
+                    threads=args.threads
+                    Downloader(url,threads,filename).run()
+            if not args.videoOnly:
+                url=stream.json()['data']['dash']['audio'][0]['baseUrl']
+                filename="%s%s(%s).%s"%(status["data"]["title"],partid+1,0,'aac')
+                print("\n开始下载"+filename)
+                print(url)
+                headers={}
+                headers["Referer"]='https://www.bilibili.com/video/av%s'%(avid,)
+                headers["Origin"]="https://www.bilibili.com"
+                headers["User-Agent"]="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.116 Safari/537.36"
+                #threading.Thread(target=download,args=(f,part['url'],stream.cookies,headers),daemon=True).start()
+                if not args.threads:
+                    f=open(filename,'wb')
+                    threads=0
+                    download(f,url,stream.cookies,headers)
+                    f.close()
+                else:
+                    threads=args.threads
+                    Downloader(url,threads,filename).run()
 
