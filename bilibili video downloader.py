@@ -1,3 +1,9 @@
+import os,time,requests,json,qrcode,sys,argparse,threading,traceback,re
+import tkinter as tk
+from io import BytesIO
+from PIL import ImageTk
+from threading import Lock
+from concurrent.futures import ThreadPoolExecutor, wait
 table='fZodR9XQDSUm21yCkr6zBqiveYah8bt4xsWpHnJE7jL5VG3guMTKNPAwcF'
 tr={}
 for i in range(58):
@@ -12,17 +18,8 @@ def dec(x):
         r+=tr[x[s[i]]]*58**i
     return (r-add)^xor
 ################################
-import os,time
-import requests,json
-import tkinter as tk
-from PIL import ImageTk
 cookie={}
 
-try:
-    import qrcode
-except:
-    os.system('pip install -i https://pypi.tuna.tsinghua.edu.cn/simple qrcode ')
-    import qrcode
 def login():
     w=tk.Tk()
     w.geometry("390x390")
@@ -57,8 +54,6 @@ def login():
                 w.destroy()
                 return requests.utils.dict_from_cookiejar(qrcode2.cookies)
 ################################
-import sys,argparse,threading,traceback
-import re
 
 suffixes = {1000: ['KB','MB','GB','TB','PB','EB','ZB','YB'],
             1024: ['KiB','MiB','GiB','TiB','PiB','EiB','ZiB','YiB']}
@@ -93,10 +88,6 @@ def download(file,URL,cookies=None,headers=None):
             sys.stdout.flush()
 
 
-from concurrent.futures import ThreadPoolExecutor, wait
-from threading import Lock
-from requests import get, head
-from io import BytesIO
 lock = Lock()
 
 class Downloader():
@@ -104,7 +95,7 @@ class Downloader():
         self.url = url
         self.num = nums
         self.name = file
-        r = head(self.url)
+        r = requests.head(self.url)
         # 若资源显示302,则迭代找寻源文件
         while r.status_code == 302:
             self.url = r.headers['Location']
@@ -121,7 +112,7 @@ class Downloader():
         headers["Origin"]="https://www.bilibili.com"
         headers["User-Agent"]="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.116 Safari/537.36"
         # stream = True 下载的数据不会保存在内存中
-        r = get(self.url, headers=headers, stream=True)
+        r = requests.get(self.url, headers=headers, stream=True)
         for i in r.iter_content(1024):
             lock.acquire()
             self.length=self.length+len(i)
