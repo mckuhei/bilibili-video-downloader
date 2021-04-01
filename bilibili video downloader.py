@@ -184,8 +184,15 @@ def getBangumi(id):
     r=requests.get(link).json()
     if r["code"]:
         exit(r["code"],r["message"])
+    global stream_URL
+    stream_URL="https://api.bilibili.com/pgc/player/web/playurl?avid=%s&cid=%s"
     return {"data":{"title":r["result"]["title"],"pages":r["result"]["episodes"]}}
 
+
+def removeChars(name):
+	for i in r'\/:*?"<>|':
+		name=name.replace(i,' ')
+	return name
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser()
@@ -197,20 +204,29 @@ if __name__=="__main__":
     parser.add_argument("--only",help="只下载某个分P",type=int)
     parser.add_argument("-t","--threads",help="多线程，最大1024线程",type=int)
     parser.add_argument("-m","--mode",help="模式:1.flv模式，存在限速，部分视频有分段 2.mp4模式，限速65k，只支持360/240p，无视频分段 3.dash模式，无限速，无视频分段，音视频分离。",type=int)
-    parser.add_argument("-v","--videoOnly",action="store_true")
-    parser.add_argument("-a","--audioOnly",action="store_true")
+    parser.add_argument("-v","--videoOnly",action="store_true",help="只下载视频")
+    parser.add_argument("-a","--audioOnly",action="store_true",help="只下载音频")
+    parser.add_argument("-s","--sessdata",help="cookie里的SESSDATA，填入此项就不会要求扫码了")
+    parser.add_argument("-c","--csrf",help="cookie里的bili_jct，如果显示-412请填入此项")
+    parser.add_argument("-o","--to",help="输出文件")
     args=parser.parse_args()
+    if not args.to:
+    	args.to="."
     avid=checkIsVaildId(args.avid)
     if not avid:
         print("无效av/bv/ss/ep/md号")
         sys.exit(-1)
-    cookies=None
+    cookies={}
     fourk=0
     resolution=args.resolution #16=360P 32=480P 64=720P 74=720P60FPS 80=1080P 112=1080P+ 116=1080P60FPS 120=4K
     if not resolution: resolution=32
-    if resolution>=64:
+    if resolution>=64 and not args.sessdata:
         print("二维码已生成，注意弹窗")
         cookies=login()
+    if args.sessdata:
+        cookies["SESSDATA"]=args.sessdata
+    if args.csrf:
+        cookies["bili_jct"]=args.csrf
     if resolution>=120:
         fourk=1
     if type(avid)==str:
@@ -233,14 +249,16 @@ if __name__=="__main__":
         parts=status["data"]["pages"][partid]
         if parts.get("aid"):
             avid=parts["aid"]
+        print(stream_URL%(avid,parts["cid"])+"&qn=%s&fourk=%s&fnval=%s"%(resolution,fourk,16 if args.mode==3 else 1 if args.mode==2 else 0))
         stream=requests.get(stream_URL%(avid,parts["cid"])+"&qn=%s&fourk=%s&fnval=%s"%(resolution,fourk,16 if args.mode==3 else 1 if args.mode==2 else 0),cookies=cookies,)
         if stream.json()["code"]!=0: exit(stream.json()["code"],stream.json()["message"])
         if args.mode!=3:
             j=0
-            for part in stream.json()["data"]["durl"]:
+            for part in stream.json()["result" if "pgc" in stream_URL else "data"]["durl"]:
                 j+=1
-                filename="%s%s(%s).%s"%(status["data"]["title"],partid+1,j,part['url'].split('/')[-1].split("?")[0].split('.')[-1])
+                filename=removeChars("%s%s(%s).%s"%(status["data"]["title"],partid+1,j,part['url'].split('/')[-1].split("?")[0].split('.')[-1]))
                 print("\n开始下载"+filename)
+                filename=os.path.join(args.to,filename)
                 print(part['url'])
                 headers={}
                 headers["Referer"]='https://www.bilibili.com/video/av%s'%(avid,)
@@ -257,9 +275,10 @@ if __name__=="__main__":
                     Downloader(part['url'],threads,filename,part["size"]).run()
         if args.mode==3:
             if not args.audioOnly:
-                url=stream.json()['data']['dash']['video'][0]['baseUrl']
-                filename="%s%s(%s).%s"%(status["data"]["title"],partid+1,0,'mp4')
+                url=stream.json()["result" if "pgc" in stream_URL else 'data']['dash']['video'][0]['baseUrl']
+                filename=removeChars("%s%s(%s).%s"%(status["data"]["title"],partid+1,0,'mp4'))
                 print("\n开始下载"+filename)
+                filename=os.path.join(args.to,filename)
                 print(url)
                 headers={}
                 headers["Referer"]='https://www.bilibili.com/video/av%s'%(avid,)
@@ -275,9 +294,10 @@ if __name__=="__main__":
                     threads=args.threads
                     Downloader(url,threads,filename).run()
             if not args.videoOnly:
-                url=stream.json()['data']['dash']['audio'][0]['baseUrl']
-                filename="%s%s(%s).%s"%(status["data"]["title"],partid+1,0,'aac')
+                url=stream.json()["result" if "pgc" in stream_URL else 'data']['dash']['audio'][0]['baseUrl']
+                filename=removeChars("%s%s(%s).%s"%(status["data"]["title"],partid+1,0,'aac'))
                 print("\n开始下载"+filename)
+                filename=os.path.join(args.to,filename)
                 print(url)
                 headers={}
                 headers["Referer"]='https://www.bilibili.com/video/av%s'%(avid,)
