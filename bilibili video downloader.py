@@ -95,13 +95,17 @@ class Downloader():
         self.url = url
         self.num = nums
         self.name = file
-        r = requests.head(self.url)
+        headers = {}
+        headers["Referer"]='https://www.bilibili.com/'
+        headers["Origin"]="https://www.bilibili.com"
+        headers["User-Agent"]="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.116 Safari/537.36"
+        r = requests.get(self.url,headers=headers,stream=True)
         # 若资源显示302,则迭代找寻源文件
         while r.status_code == 302:
             self.url = r.headers['Location']
             print("该url已重定向至{}".format(self.url))
-            r = head(self.url)
-        self.size = size if size else r.headers['Content-Length']
+            r = get(self.url,headers=headers,stream=True)
+        self.size = size if size else int(r.headers['Content-Length'])
         print('该文件大小为：{} bytes'.format(self.size))
         self.length=0
         self.start=time.perf_counter()
@@ -113,11 +117,14 @@ class Downloader():
         headers["User-Agent"]="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.116 Safari/537.36"
         # stream = True 下载的数据不会保存在内存中
         r = requests.get(self.url, headers=headers, stream=True)
+        offset=start
         for i in r.iter_content(1024):
             lock.acquire()
+            fp.seek(offset)
             self.length=self.length+len(i)
-            lock.release()
+            offset+=len(i)
             fp.write(i)
+            lock.release()
 
     def showPercent(self):
         while 1:
@@ -125,6 +132,7 @@ class Downloader():
             sys.stdout.write("\r%s |%s%s| %s/s \b"%(str(value)+"%","█"*int(value/2),"  "*(50-int(value/2)),approximate_size(self.length/(time.perf_counter()-self.start))))
             sys.stdout.flush()
             if self.size<=self.length: break
+            #time.sleep(0.05)
 
 
     def run(self):
@@ -136,22 +144,17 @@ class Downloader():
         part = self.size // self.num
         pool = ThreadPoolExecutor(max_workers=self.num+1)
         futures = []
-        io = []
+        fp = open(self.name,"wb")
         for i in range(self.num):
-            io.append(BytesIO())
             start = part * i
             # 最后一块
             if i == self.num - 1:
                 end = self.size
             else:
                 end = start + part - 1
-                print('{}->{}'.format(start, end))
-            futures.append(pool.submit(self.down, start, end, io[i]))
+            futures.append(pool.submit(self.down, start, end, fp))
         futures.append(pool.submit(self.showPercent))
         wait(futures)
-        fp = open(self.name,"wb")
-        for i in io:
-            fp.write(i.getvalue())
         print('\n%s 下载完成' % self.name)
 #https://www.jianshu.com/p/f98b004763c4
 def exit(code,message=""):
@@ -249,8 +252,8 @@ if __name__=="__main__":
         parts=status["data"]["pages"][partid]
         if parts.get("aid"):
             avid=parts["aid"]
-        print(stream_URL%(avid,parts["cid"])+"&qn=%s&fourk=%s&fnval=%s"%(resolution,fourk,16 if args.mode==3 else 1 if args.mode==2 else 0))
-        stream=requests.get(stream_URL%(avid,parts["cid"])+"&qn=%s&fourk=%s&fnval=%s"%(resolution,fourk,16 if args.mode==3 else 1 if args.mode==2 else 0),cookies=cookies,)
+        #print(stream_URL%(avid,parts["cid"])+"&qn=%s&fourk=%s&fnval=%s"%(resolution,fourk,16 if args.mode==3 else 1 if args.mode==2 else 0))
+        stream=requests.get(stream_URL%(avid,parts["cid"])+"&qn=%s&fourk=%s&fnval=%s"%(resolution,fourk,16 if args.mode==3 else 1 if args.mode==2 else 0),cookies=cookies,headers={'referer':'https://www.bilibili.com/'})
         if stream.json()["code"]!=0: exit(stream.json()["code"],stream.json()["message"])
         if args.mode!=3:
             j=0
@@ -259,7 +262,6 @@ if __name__=="__main__":
                 filename=removeChars("%s%s(%s).%s"%(status["data"]["title"],partid+1,j,part['url'].split('/')[-1].split("?")[0].split('.')[-1]))
                 print("\n开始下载"+filename)
                 filename=os.path.join(args.to,filename)
-                print(part['url'])
                 headers={}
                 headers["Referer"]='https://www.bilibili.com/video/av%s'%(avid,)
                 headers["Origin"]="https://www.bilibili.com"
@@ -279,7 +281,6 @@ if __name__=="__main__":
                 filename=removeChars("%s%s(%s).%s"%(status["data"]["title"],partid+1,0,'mp4'))
                 print("\n开始下载"+filename)
                 filename=os.path.join(args.to,filename)
-                print(url)
                 headers={}
                 headers["Referer"]='https://www.bilibili.com/video/av%s'%(avid,)
                 headers["Origin"]="https://www.bilibili.com"
@@ -298,7 +299,6 @@ if __name__=="__main__":
                 filename=removeChars("%s%s(%s).%s"%(status["data"]["title"],partid+1,0,'aac'))
                 print("\n开始下载"+filename)
                 filename=os.path.join(args.to,filename)
-                print(url)
                 headers={}
                 headers["Referer"]='https://www.bilibili.com/video/av%s'%(avid,)
                 headers["Origin"]="https://www.bilibili.com"
